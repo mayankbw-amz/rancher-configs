@@ -1,173 +1,135 @@
 apiVersion: install.istio.io/v1alpha1
 kind: IstioOperator
-metadata:
-  name: rancher-overlay
 spec:
-  meshConfig:
-    proxyListenPort: 15001
-    connectTimeout: 10s
-    protocolDetectionTimeout: 5s
-    ingressService: pep-eiap-ingress-gw01
-    ingressSelector: pep-eiap-ingress-gw01
-    accessLogFile: /dev/stdout
-    accessLogEncoding: TEXT
-    enableAutoMtls: true
-    defaultServiceExportTo:
-      - "*"
-    defaultVirtualServiceExportTo:
-      - "*"
-    defaultDestinationRuleExportTo:
-      - "*"
-    rootNamespace: pep-eiap-istio-config
-    h2UpgradePolicy: DO_NOT_UPGRADE
-    enablePrometheusMerge: true
-    outboundTrafficPolicy:
-      mode: ALLOW_ANY
-​
-    defaultConfig:
-      statusPort: 15020
-      drainDuration: 45s
-      # parentShutdownDuration: 60s 
-      terminationDrainDuration: 5s
-      proxyAdminPort: 15000
-      controlPlaneAuthPolicy: MUTUAL_TLS
-      holdApplicationUntilProxyStarts: true
-  
-  values:
-    cni:
-      image: rancher/mirrored-istio-install-cni:1.17.2
-      excludeNamespaces:
-        - istio-system
-        - kube-system
-      logLevel: info
-      cniBinDir: /opt/cni/bin
-      cniConfDir: /etc/cni/net.d
-​
   components:
     base:
-      enabled: true
-​
+      enabled: {{ .Values.base.enabled }}
     cni:
-      enabled: true
+      enabled: {{ .Values.cni.enabled }}
       k8s:
-        tolerations:
-        - key: CriticalAddonsOnly
-          operator: Exists
-        overlays:
-        - apiVersion: "apps/v1"
-          kind: "DaemonSet"
-          name: "istio-cni-node"
-          patches:
-          - path: spec.template.spec.containers.[name:install-cni].securityContext.privileged
-            value: true
-​
-    pilot:
-      enabled: true
+        nodeSelector: {{ include "linux-node-selector" . | nindent 12 }}
+{{- if .Values.nodeSelector }}
+{{- toYaml .Values.nodeSelector | nindent 12 }}
+{{- end }}
+        tolerations: {{ include "linux-node-tolerations" . | nindent 12 }}
+{{- if .Values.tolerations }}
+{{- toYaml .Values.tolerations | nindent 12 }}
+{{- end }}
+    egressGateways:
+    - enabled: {{ .Values.egressGateways.enabled }}
+      name: istio-egressgateway
       k8s:
-        hpaSpec:
-          minReplicas: 3
-          maxReplicas: 6
-        nodeSelector:
-          kubernetes.azure.com/mode: system
-          kubernetes.io/os: linux
-        tolerations:
-        - key: CriticalAddonsOnly
-          operator: Exists
-        overlays:
-        - kind: Deployment
-          name: istiod
-          patches:
-          - path: spec.template.spec.topologySpreadConstraints
-            value:
-            - labelSelector:
-                matchLabels:
-                  operator.istio.io/component: Pilot
-              maxSkew: 1
-              topologyKey: topology.kubernetes.io/zone
-              whenUnsatisfiable: DoNotSchedule
-​
+      {{- if .Values.egressGateways.hpaSpec }}
+        hpaSpec: {{ toYaml .Values.egressGateways.hpaSpec | nindent 12 }}
+      {{- end }}
+      {{- if .Values.egressGateways.podDisruptionBudget }}
+        podDisruptionBudget: {{ toYaml .Values.egressGateways.podDisruptionBudget | nindent 12 }}
+      {{- end }}
+        nodeSelector: {{ include "linux-node-selector" . | nindent 12 }}
+{{- if .Values.nodeSelector }}
+{{- toYaml .Values.nodeSelector | nindent 12 }}
+{{- end }}
+        tolerations: {{ include "linux-node-tolerations" . | nindent 12 }}
+{{- if .Values.tolerations }}
+{{- toYaml .Values.tolerations | nindent 12 }}
+{{- end }}
     ingressGateways:
-      - name: istio-ingressgateway
-        enabled: false
-      - name: pep-eiap-ingress-gw01
-        enabled: true
-        k8s:
-          nodeSelector:
-            kubernetes.azure.com/mode: system
-            kubernetes.io/os: linux
-          tolerations:
-          - key: CriticalAddonsOnly
-            operator: Exists
-          hpaSpec:
-            minReplicas: 3
-            maxReplicas: 6
-          serviceAnnotations:
-            service.beta.kubernetes.io/azure-load-balancer-internal: 'true'
-            service.beta.kubernetes.io/azure-load-balancer-tcp-idle-timeout: '30'
-          overlays:
-          - kind: HorizontalPodAutoscaler
-            name: pep-eiap-ingress-gw01
-            patches:
-            - path: metadata.labels.app
-              value: pep-eiap-ingress-gw01
-            - path: metadata.labels.istio
-              value: pep-eiap-ingress-gw01
-            - path: spec.scaleTargetRef.name
-              value: pep-eiap-ingress-gw01
-          - kind: Deployment
-            name: pep-eiap-ingress-gw01
-            patches:
-            - path: metadata.labels.app
-              value: pep-eiap-ingress-gw01
-            - path: metadata.labels.istio
-              value: pep-eiap-ingress-gw01
-            - path: spec.selector.matchLabels.app
-              value: pep-eiap-ingress-gw01
-            - path: spec.selector.matchLabels.istio
-              value: pep-eiap-ingress-gw01
-            - path: spec.template.metadata.labels.app
-              value: pep-eiap-ingress-gw01
-            - path: spec.template.metadata.labels.istio
-              value: pep-eiap-ingress-gw01
-            - path: spec.template.spec.topologySpreadConstraints
-              value:
-              - labelSelector:
-                  matchLabels:
-                    app: pep-eiap-ingress-gw01
-                maxSkew: 1
-                topologyKey: topology.kubernetes.io/zone
-                whenUnsatisfiable: DoNotSchedule
-          - apiVersion: v1
-            kind: Service
-            name: pep-eiap-ingress-gw01
-            patches:
-            - path: metadata.labels.app
-              value: pep-eiap-ingress-gw01
-            - path: metadata.labels.istio
-              value: pep-eiap-ingress-gw01
-            - path: spec.selector.app
-              value: pep-eiap-ingress-gw01
-            - path: spec.selector.istio
-              value: pep-eiap-ingress-gw01
-            - path: spec.loadBalancerIP
-              value: 172.25.160.94
-            - path: spec.type
-              value: LoadBalancer
-          - kind: ServiceAccount
-            name: pep-eiap-ingress-gw01-service-account
-            patches:
-            - path: metadata.labels.app
-              value: pep-eiap-ingress-gw01
-            - path: metadata.labels.istio
-              value: pep-eiap-ingress-gw01
-          - kind: PodDisruptionBudget
-            name: pep-eiap-ingress-gw01
-            patches:
-            - path: metadata.labels.app
-              value: pep-eiap-ingress-gw01
-            - path: metadata.labels.istio
-              value: pep-eiap-ingress-gw01
-            - path: spec.selector.matchLabels.istio
-              value: pep-eiap-ingress-gw01
-            - path: spec.selector.matchLabels.app
-              value: pep-eiap-ingress-gw01
+    - enabled: {{ .Values.ingressGateways.enabled }}
+      name: istio-ingressgateway
+      k8s:
+      {{- if .Values.ingressGateways.hpaSpec }}
+        hpaSpec: {{ toYaml .Values.ingressGateways.hpaSpec | nindent 12 }}
+      {{- end }}
+      {{- if .Values.ingressGateways.podDisruptionBudget }}
+        podDisruptionBudget: {{ toYaml .Values.ingressGateways.podDisruptionBudget | nindent 12 }}
+      {{- end }}
+        nodeSelector: {{ include "linux-node-selector" . | nindent 12 }}
+{{- if .Values.nodeSelector }}
+{{- toYaml .Values.nodeSelector | nindent 12 }}
+{{- end }}
+        tolerations: {{ include "linux-node-tolerations" . | nindent 12 }}
+{{- if .Values.tolerations }}
+{{- toYaml .Values.tolerations | nindent 12 }}
+{{- end }}
+        service:
+          ports:
+          - name: status-port
+            port: 15021
+            targetPort: 15021
+          - name: http2
+            port: 80
+            targetPort: 8080
+            nodePort: 31380
+          - name: https
+            port: 443
+            targetPort: 8443
+            nodePort: 31390
+          - name: tcp
+            port: 31400
+            targetPort: 31400
+            nodePort: 31400
+          - name: tls
+            port: 15443
+            targetPort: 15443
+    istiodRemote:
+      enabled: {{ .Values.istiodRemote.enabled }}
+    pilot:
+      enabled: {{ .Values.pilot.enabled }}
+      k8s:
+      {{- if .Values.pilot.hpaSpec }}
+        hpaSpec: {{ toYaml .Values.pilot.hpaSpec | nindent 12 }}
+      {{- end }}
+      {{- if .Values.pilot.podDisruptionBudget }}
+        podDisruptionBudget: {{ toYaml .Values.pilot.podDisruptionBudget | nindent 12 }}
+      {{- end }}
+        nodeSelector: {{ include "linux-node-selector" . | nindent 12 }}
+{{- if .Values.nodeSelector }}
+{{- toYaml .Values.nodeSelector | nindent 12 }}
+{{- end }}
+        tolerations: {{ include "linux-node-tolerations" . | nindent 12 }}
+{{- if .Values.tolerations }}
+{{- toYaml .Values.tolerations | nindent 12 }}
+{{- end }}
+  hub: {{ .Values.systemDefaultRegistry | default "docker.io" }}
+  profile: default
+  tag: {{ .Values.tag }}
+  revision: {{ .Values.revision }}
+  meshConfig:
+    defaultConfig:
+      proxyMetadata:
+      {{- if .Values.dns.enabled }}
+        ISTIO_META_DNS_CAPTURE: "true"
+      {{- end }}
+  values:
+    gateways:
+      istio-egressgateway:
+        name: istio-egressgateway
+        type: {{ .Values.egressGateways.type }}
+      istio-ingressgateway:
+        name: istio-ingressgateway
+        type: {{ .Values.ingressGateways.type }}
+    global:
+      istioNamespace: {{ template "istio.namespace" . }}
+      proxy:
+        image: {{ template "system_default_registry" . }}{{ .Values.global.proxy.repository }}:{{ .Values.global.proxy.tag }}
+      proxy_init:
+        image: {{ template "system_default_registry" . }}{{ .Values.global.proxy_init.repository }}:{{ .Values.global.proxy_init.tag }}
+      {{- if .Values.global.defaultPodDisruptionBudget.enabled }}
+      defaultPodDisruptionBudget:
+        enabled: {{ .Values.global.defaultPodDisruptionBudget.enabled }}
+      {{- end }}
+    {{- if .Values.pilot.enabled }}
+    pilot:
+      image: {{ template "system_default_registry" . }}{{ .Values.pilot.repository }}:{{ .Values.pilot.tag }}
+    {{- end }}
+    telemetry:
+      enabled: {{ .Values.telemetry.enabled }}
+      v2:
+        enabled: {{ .Values.telemetry.v2.enabled }}
+    {{- if .Values.cni.enabled }}
+    cni:
+      image: {{ template "system_default_registry" . }}{{ .Values.cni.repository }}:{{ .Values.cni.tag }}
+      excludeNamespaces:
+      {{- toYaml .Values.cni.excludeNamespaces | nindent 8 }}
+      logLevel: {{ .Values.cni.logLevel }}
+    {{- end }}

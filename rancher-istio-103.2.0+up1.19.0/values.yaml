@@ -21,7 +21,7 @@ dns:
   enabled: false
 
 base:
-  enabled: true
+  enabled: false
 
 cni:
   enabled: false
